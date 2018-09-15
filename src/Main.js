@@ -1,0 +1,1 @@
+exports.readTypes = require('typeread').default;
