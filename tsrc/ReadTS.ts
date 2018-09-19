@@ -1,7 +1,7 @@
 import * as ts from "typescript";
 
 /** Generate documentation for all classes in a set of .ts files */
-export default function readTypes(
+export function readTypes(
   configFilename: string,
   include: (name:string) => boolean,
 ): any[] {
@@ -51,11 +51,15 @@ export default function readTypes(
     }
   }
 
+  function optionalMember(s: ts.Symbol, n?: ts.Node) {
+    let optional = ((s.flags & ts.SymbolFlags.Optional) == ts.SymbolFlags.Optional);
+    let memType = checker.getTypeOfSymbolAtLocation(s, n ? n : s.valueDeclaration);
+    return {name:s.name, type: getWithAliasProps(memType), optional};
+  }
+  
+
   function convertProperties(t: ts.Type, n?: ts.Node): any {
-    return t.getProperties().map( (s: ts.Symbol) => {
-        let memType = checker.getTypeOfSymbolAtLocation(s, n ? n : s.valueDeclaration);
-        return {member:s.name, memberType: getWithAliasProps(memType)};
-      });
+    return t.getProperties().map( (s: ts.Symbol) => optionalMember(s, n) );
   }
 
   function getWithAliasProps(t: ts.Type): any {
@@ -94,12 +98,7 @@ export default function readTypes(
     if (callSigs.length > 0)
     {
       let sig =callSigs[0];
-      let params = sig.getParameters().map(
-        (p: ts.Symbol) => { return {
-          name: ts.symbolName(p), 
-          paramType: getWithAliasProps(checker.getTypeOfSymbolAtLocation(p, p.valueDeclaration))
-        } }
-      );
+      let params = sig.getParameters().map((p: ts.Symbol) => optionalMember(p));
       return {type:"function", params, return: getWithAliasProps(sig.getReturnType()) };
     } 
     if (memType.flags & (ts.TypeFlags.Object | ts.TypeFlags.NonPrimitive))

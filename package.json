@@ -1,5 +1,5 @@
 {
-  "name": "ts-to-ps-in-ts",
+  "name": "purescript-readts",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -10,7 +10,6 @@
   "license": "ISC",
   "dependencies": {
     "@types/node": "^10.9.4",
-    "@types/typescript": "^2.0.0",
     "typescript": "^3.0.3"
   }
 }
