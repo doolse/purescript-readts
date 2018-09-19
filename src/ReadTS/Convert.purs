@@ -6,7 +6,7 @@ import Control.Alt ((<|>))
 import Data.Array (filter)
 import Data.Either (fromRight)
 import Data.Foldable (any)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe')
 import Data.String (Pattern(..), indexOf, toLower, toUpper)
 import Data.String as String
 import Data.String.Regex (Regex, parseFlags, regex, replace')
@@ -77,19 +77,20 @@ stringConstType s = dataTypeRef (tsCompat "StringConst") [TStringConstant s]
 untypedType :: PSTypeDecl 
 untypedType = dataTypeRef (tsCompat "Any") []
 
-unionMapping :: TSType -> (TSType -> PSTypeDecl) -> Maybe PSTypeDecl
-unionMapping (Union _ types) f = do 
+unionMapping :: (TSType -> PSTypeDecl) -> TSType -> Maybe PSTypeDecl
+unionMapping f = case _  of 
+  (Union _ types) -> do 
     let toMember t = Tuple "typed" $ f t 
         psTypes = toMember <$> types
     Just $ dataTypeRef unionSymbol [ TRow psTypes Nothing ]
-unionMapping _ f = Nothing
+  _ -> Nothing
  
--- extendedMapping :: TSType -> PSTypeDecl
--- extendedMapping t =
---   let m = referenceMapping t <|> unionMapping t extendedMapping <|>
---   simpleMapping t <|> arrayMapping extendedMapping t <|>
---   functionMapping extendedMapping t
---   in fromMaybe' (\_ -> TCommented (show t) untypedType) m
+standardMappings :: (TSType -> PSTypeDecl) -> TSType -> PSTypeDecl
+standardMappings f t =
+  let m = unionMapping f t <|>
+  simpleMapping t <|> arrayMapping f t <|>
+  functionMapping f t
+  in fromMaybe' (\_ -> TCommented (show t) untypedType) m
 
 referenceMapping :: (String -> Array TSType -> Maybe PSTypeDecl) -> TSType -> Maybe PSTypeDecl
 referenceMapping f = case _ of 
@@ -125,9 +126,9 @@ upperFirst name = toUpper (String.take 1 name) <> String.drop 1 name
 lowerFirst :: String -> String
 lowerFirst name = toLower (String.take 1 name) <> String.drop 1 name
 
-mkEnumDec :: String -> PSDeclaration
-mkEnumDec a = let name = escapeFunc a in DFunction {name, ftype: stringConstType a, 
-  bodySyms: [functionSymbol unsafeCoerceFunc], body: \qual -> name <> " = " <> qual unsafeCoerceFunc <> escapeString a}
+mkEnumFunction :: String -> PSDeclaration
+mkEnumFunction a = let name = escapeFunc a in DFunction {name, ftype: stringConstType a, 
+  bodySyms: [functionSymbol unsafeCoerceFunc], body: \qual -> name <> " = " <> qual unsafeCoerceFunc <> " " <> escapeString a}
 
 startsWithAny :: Array String -> String -> Boolean
 startsWithAny patterns s = any (\p -> (indexOf (Pattern p) s) == Just 0) patterns

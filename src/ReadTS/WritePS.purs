@@ -84,4 +84,4 @@ writeModule (PSModule mod) =
       DFunction {name, ftype, body } -> name <> " :: " <> writeTypeIndent 0 ftype <> "\n" <> body qual
   in "module " <> mod.name <> " where\n" <> 
      (joinWith "\n" (mapMaybe writeImport importStatements)) <> "\n\n" <>
-     (joinWith "\n" (writeDeclaration <$> mod.declarations))
+     (joinWith "\n\n" (writeDeclaration <$> mod.declarations))
