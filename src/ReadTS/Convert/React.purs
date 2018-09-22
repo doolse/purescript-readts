@@ -2,7 +2,7 @@ module ReadTS.Convert.React where
 
 import Prelude
 
-import Data.Array (foldMap, null, partition)
+import Data.Array (filter, find, foldMap, length, null, partition)
 import Data.Array as Array
 import Data.List (List(..))
 import Data.List as List
@@ -16,9 +16,9 @@ import Node.FS.Sync (mkdir, writeTextFile)
 import Node.FS.Sync as FS
 import Node.Path (FilePath, resolve)
 import Node.Path as Path
-import ReadTS (NamedTSType, PSDeclaration(..), PSModule(..), PSName(..), PSTypeDecl(..), TSType(..), dataTypeRef, localType, localType')
+import ReadTS (NamedTSType, PSDeclaration(..), PSModule(..), PSName(..), PSTypeDecl(..), TSType(..), dataTypeRef, functionSymbol, localType, localType')
 import ReadTS.CommonPS (arrayType, funcType, recordRefType)
-import ReadTS.Convert (collectStrings, escapeFunc, isTSRecordSymbol, mkEnumFunction, optionalType, referenceMapping, simplified, standardMappings)
+import ReadTS.Convert (collectStrings, escapeFunc, isTSEQSymbol, mkEnumFunction, optionRecordType, optionalType, referenceMapping, simplified, standardMappings)
 import ReadTS.WritePS (writeModule)
 
 type Property = { name:: String, optional::Boolean, t:: PSTypeDecl, stringEnums :: Set.Set String }
@@ -26,21 +26,24 @@ type Property = { name:: String, optional::Boolean, t:: PSTypeDecl, stringEnums 
 type ComponentModule = {
   name :: String, 
   module :: PSModule, 
-  elemFuncName :: String,
+  classFuncName :: String,
   classRequire :: String, 
   classProperty :: String,
   componentType :: ComponentType,
   stringEnums :: Set.Set String
 }
 
-data ComponentType = PropsAndChildren | PropsOnly | ChildrenOnly
+data ComponentType = PropsAndChildren PSTypeDecl Boolean | PropsOnly | ChildrenOnly PSTypeDecl
 
 reactCompat :: String -> PSName
 reactCompat = PSName "Data.TSCompat.React"
 
+reactNodeType :: PSTypeDecl
+reactNodeType = dataTypeRef (reactCompat "ReactNode") []
+
 reactRefMapping :: String -> Array TSType -> Maybe PSTypeDecl
 reactRefMapping "React.ReactElement" [Any] = Just $ reactType "ReactElement"
-reactRefMapping "React.ReactNode" [] = Just $ dataTypeRef (reactCompat "ReactNode") []
+reactRefMapping "React.ReactNode" [] = Just reactNodeType
 reactRefMapping _ _ = Nothing
 
 reactComponentMapper :: (String -> Array TSType -> Maybe PSTypeDecl) -> TSType -> PSTypeDecl
@@ -52,9 +55,9 @@ reactComponentMapper refMapper =
 reactName :: String -> PSName
 reactName = PSName "React"
 
-isReactNodeChildren :: Property -> Boolean
-isReactNodeChildren {name:"children", t} = true
-isReactNodeChildren _ = false
+isChildrenProp :: Property -> Boolean
+isChildrenProp {name:"children"} = true
+isChildrenProp _ = false
 
 reactType :: String -> PSTypeDecl 
 reactType n = reactType' n []
@@ -62,8 +65,17 @@ reactType n = reactType' n []
 reactType' :: String -> (Array PSTypeDecl) -> PSTypeDecl 
 reactType' n a = dataTypeRef (reactName n) a
 
+reactClassType :: PSTypeDecl -> PSTypeDecl 
+reactClassType a = reactType' "ReactClass" [a]
+
 reactElementType :: PSTypeDecl
 reactElementType = reactType "ReactElement"
+
+createLeafFuncName :: PSName
+createLeafFuncName = reactName "unsafeCreateLeafElement"
+
+createElemFuncName :: PSName
+createElemFuncName = reactName "unsafeCreateElementDynamic"
 
 convertProperty :: (TSType -> PSTypeDecl) -> NamedTSType -> Property
 convertProperty f {name,t,optional} = 
@@ -71,18 +83,32 @@ convertProperty f {name,t,optional} =
       stringEnums = Set.fromFoldable $ collectStrings t 
   in {name, optional, t: f $ simplified optType, stringEnums}
 
+reactArray :: PSTypeDecl
+reactArray = arrayType reactElementType
+
 detectComponentType :: Array Property -> { componentType :: ComponentType, props :: Array Property }
-detectComponentType [] = {componentType: ChildrenOnly, props:[]}
-detectComponentType props = {componentType: PropsAndChildren, props}
+detectComponentType [] = {componentType: ChildrenOnly reactArray, props:[] }
+detectComponentType props | Just children <- find isChildrenProp props  = 
+  let childType = case children.t of  
+        t | t == reactElementType -> t
+        t -> reactArray
+      withoutChildren = filter (not isChildrenProp) props 
+  in if null withoutChildren then {componentType: ChildrenOnly childType, props:[] } 
+     else  {componentType: PropsAndChildren childType children.optional, props: withoutChildren}
+detectComponentType props = {componentType: PropsAndChildren reactArray true, props}
 
 propertiesToModule :: {moduleName :: String, classRequire :: String, classProperty :: String } 
   -> String -> Array Property -> ComponentType -> ComponentModule
 propertiesToModule {moduleName,classRequire,classProperty} componentName props componentType =
   let 
-    elemFuncName = escapeFunc componentName
+    baseFuncName = escapeFunc componentName
+    classFuncName = escapeFunc $ "class" <> componentName
+    classFunc = DForeignFunction classFuncName $ TVariables ["a"] $ reactClassType (TVariable "a")
+    childrenOnlyFunc name = DFunction {name, ftype: funcType reactArray reactElementType, 
+        bodySyms: [functionSymbol createElemFuncName],
+        body: \qual -> name <> " = " <> qual createElemFuncName <> " " <> classFuncName <> " {}"} 
     declarations = case componentType of
-      ChildrenOnly -> [ DForeignFunction elemFuncName $ 
-        funcType (arrayType reactElementType) reactElementType ]
+      ChildrenOnly childType -> [ classFunc, childrenOnlyFunc baseFuncName ]
       _ -> let 
           {yes:opts, no:mand} = partition _.optional props 
           toRowMember {name,t} = Tuple name t
@@ -91,27 +117,26 @@ propertiesToModule {moduleName,classRequire,classProperty} componentName props c
           optionalType = DTypeAlias optionalName ["r"] (TRow (toRowMember <$> opts) $ Just (TVariable "r"))
           mandType = DTypeAlias mandName [] (TRow (toRowMember <$> mand) $ Nothing)
           mandRef = localType mandName
-          withChildren = case componentType of 
-            PropsAndChildren -> funcType (arrayType reactElementType) reactElementType
-            _ -> reactElementType
-          underscoreFunc = case componentType of 
-            PropsAndChildren | null mand -> let name = elemFuncName <> "_"
-              in [DFunction {
-                name, 
-                ftype: withChildren, bodySyms:[],
-                body: \qual -> name <> " = " <> elemFuncName <> " {}"
-                }]
-            _  -> []
-          ftype = TVariables ["a"] (TConstraint isTSRecordSymbol 
-            [TVariable "a", (localType' optionalName) [mandRef], mandRef] $ 
-              funcType (recordRefType $ TVariable "a") withChildren )
-        in [optionalType, mandType, DForeignFunction elemFuncName ftype] <> underscoreFunc
+          propRecord = optionRecordType (localType' optionalName $ [mandRef]) mandRef
+          constrainedFuncType retType bodySyms body name = DFunction {name, bodySyms, 
+            ftype:TVariables ["a"] (TConstraint isTSEQSymbol [recordRefType $ TVariable "a", propRecord ] $ 
+              funcType (recordRefType $ TVariable "a") retType), body }
+          elemFunc funcCall retType name = constrainedFuncType retType [functionSymbol funcCall] 
+            (\qual -> name <> " = " <> qual funcCall <> " " <> classFuncName) name
+          leafFunc = elemFunc createLeafFuncName reactElementType 
+          bothFunc = elemFunc createElemFuncName (funcType reactArray reactElementType)
+          funcs = case componentType of 
+            PropsOnly -> [leafFunc baseFuncName]
+            _ -> [bothFunc baseFuncName, 
+                  childrenOnlyFunc $ baseFuncName <> "_", 
+                  leafFunc $ baseFuncName <> "'"]
+        in [classFunc, optionalType, mandType] <> funcs
   in { 
     name: componentName,  
     "module": PSModule { name: moduleName, declarations }, 
     classRequire,
     classProperty,
-    elemFuncName, 
+    classFuncName, 
     componentType, 
     stringEnums: foldMap _.stringEnums props
   }
@@ -131,14 +156,7 @@ createDirsForModule _basepath moduleName = do
 writeComponent :: FilePath -> ComponentModule -> Effect Unit 
 writeComponent basepath cm@{name ,"module": mod@PSModule {name:moduleName}} = do 
   let
-    propPart = "function() { return function(p) {"
-    funcJs = case cm.componentType of 
-      PropsAndChildren -> propPart <> "return function(c) { return R.createElement(clz, p, c); } } }"
-      PropsOnly -> propPart <> "return R.createElement(clz, p); } }"
-      ChildrenOnly -> "function (c) { return R.createElement(clz, {}, c); }"
-      
-    componentFFI = "const clz = require('" <> cm.classRequire  <> "')." <> cm.classProperty <> ";\nconst R = require('react');\n" <>
-          "exports." <> cm.elemFuncName <> " = " <> funcJs
+    componentFFI = "exports." <> cm.classFuncName <> " = " <> " require('" <> cm.classRequire  <> "')." <> cm.classProperty <> "\n"
 
   moduleBase <- createDirsForModule basepath moduleName
   writeTextFile UTF8 (moduleBase <> ".purs") $ writeModule mod

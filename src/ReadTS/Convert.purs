@@ -62,8 +62,8 @@ isUnionable = case _ of
   StringLiteral _ -> true 
   _ -> false
 
-isTSRecordSymbol :: PSName 
-isTSRecordSymbol = PSName "Data.TSCompat.Class" "IsTSRecord"
+isTSEQSymbol :: PSName 
+isTSEQSymbol = PSName "Data.TSCompat.Class" "IsTSEq"
 
 tsCompat :: String -> PSName 
 tsCompat = PSName "Data.TSCompat"
@@ -71,11 +71,17 @@ tsCompat = PSName "Data.TSCompat"
 unionSymbol :: PSName
 unionSymbol = tsCompat "OneOf"
 
+unionType :: Array PSTypeDecl -> PSTypeDecl
+unionType types = dataTypeRef unionSymbol [ TRow (Tuple "typed" <$> types) Nothing ]
+
 stringConstType :: String -> PSTypeDecl
 stringConstType s = dataTypeRef (tsCompat "StringConst") [TStringConstant s]
 
-untypedType :: PSTypeDecl 
-untypedType = dataTypeRef (tsCompat "Any") []
+anyType :: PSTypeDecl 
+anyType = dataTypeRef (tsCompat "Any") []
+
+optionRecordType :: PSTypeDecl -> PSTypeDecl -> PSTypeDecl
+optionRecordType a b = dataTypeRef (tsCompat "OptionRecord") [a, b]
 
 unionMapping :: (TSType -> PSTypeDecl) -> TSType -> Maybe PSTypeDecl
 unionMapping f = case _  of 
@@ -90,11 +96,11 @@ standardMappings f t =
   let m = unionMapping f t <|>
   simpleMapping t <|> arrayMapping f t <|>
   functionMapping f t
-  in fromMaybe' (\_ -> TCommented (show t) untypedType) m
+  in fromMaybe' (\_ -> TCommented (show t) anyType) m
 
 referenceMapping :: (String -> Array TSType -> Maybe PSTypeDecl) -> TSType -> Maybe PSTypeDecl
 referenceMapping f = case _ of 
-  Union (Just {name,typeArgs}) _ -> f name typeArgs <|> (Just $ TCommented (show name) untypedType)
+  Union (Just {name,typeArgs}) _ -> f name typeArgs <|> (Just $ TCommented (show name) anyType)
   TypeReference {name,typeArgs} -> f name typeArgs
   _ -> Nothing
 

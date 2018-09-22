@@ -66,6 +66,7 @@ derive instance eqSymType :: Eq PSSymbolType
 derive instance ordSymType :: Ord PSSymbolType
 derive instance eqSym :: Eq PSSymbol
 derive instance ordSym :: Ord PSSymbol
+derive instance eqPST :: Eq PSTypeDecl
 
 dataSymbol :: PSName -> PSSymbol
 dataSymbol = PSSymbol SymData 
