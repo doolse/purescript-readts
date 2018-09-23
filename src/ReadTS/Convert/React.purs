@@ -2,7 +2,7 @@ module ReadTS.Convert.React where
 
 import Prelude
 
-import Data.Array (filter, find, foldMap, length, null, partition)
+import Data.Array (filter, find, foldMap, null, partition)
 import Data.Array as Array
 import Data.List (List(..))
 import Data.List as List

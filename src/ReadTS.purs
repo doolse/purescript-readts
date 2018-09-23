@@ -1,7 +1,6 @@
 module ReadTS where 
 import Prelude
 
-import Control.Monad.Error.Class (throwError)
 import Data.Argonaut.Core (Json)
 import Data.Argonaut.Decode (decodeJson, (.?), (.??))
 import Data.Array (foldMap)
