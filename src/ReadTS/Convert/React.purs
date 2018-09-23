@@ -44,6 +44,19 @@ reactNodeType = dataTypeRef (reactCompat "ReactNode") []
 reactRefMapping :: String -> Array TSType -> Maybe PSTypeDecl
 reactRefMapping "React.ReactElement" [Any] = Just $ reactType "ReactElement"
 reactRefMapping "React.ReactNode" [] = Just reactNodeType
+reactRefMapping "React.SyntheticEvent" [_] = Just $ reactEventType "SyntheticEvent"
+reactRefMapping "React.MouseEvent" [_] = Just $ reactEventType "SyntheticMouseEvent"
+reactRefMapping "React.AnimationEvent" [_] = Just $ reactEventType "SyntheticAnimationEvent"
+reactRefMapping "React.KeyboardEvent" [_] = Just $ reactEventType "SyntheticKeyboardEvent"
+reactRefMapping "React.FocusEvent" [_] = Just $ reactEventType "SyntheticFocusEvent"
+reactRefMapping "React.UIEvent" [_] = Just $ reactEventType "SyntheticUIEvent"
+reactRefMapping "React.ClipboardEvent" [_] = Just $ reactEventType "SyntheticClipboardEvent"
+reactRefMapping "React.TouchEvent" [_] = Just $ reactEventType "SyntheticTouchEvent"
+reactRefMapping "React.WheelEvent" [_] = Just $ reactEventType "SyntheticWheelEvent"
+reactRefMapping "React.TransitionEvent" [_] = Just $ reactEventType "SyntheticTransitionEvent"
+reactRefMapping "React.CompositionEvent" [_] = Just $ reactEventType "SyntheticCompositionEvent"
+reactRefMapping "React.FormEvent" [_] = Just $ reactEventType "SyntheticEvent"
+reactRefMapping "React.DragEvent" [_] = Just $ reactEventType "SyntheticEvent"
 reactRefMapping _ _ = Nothing
 
 reactComponentMapper :: (String -> Array TSType -> Maybe PSTypeDecl) -> TSType -> PSTypeDecl
@@ -58,6 +71,9 @@ reactName = PSName "React"
 isChildrenProp :: Property -> Boolean
 isChildrenProp {name:"children"} = true
 isChildrenProp _ = false
+
+reactEventType :: String -> PSTypeDecl
+reactEventType n = dataTypeRef (PSName "React.SyntheticEvent" n) []
 
 reactType :: String -> PSTypeDecl 
 reactType n = reactType' n []

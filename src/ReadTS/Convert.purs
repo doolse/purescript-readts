@@ -3,7 +3,7 @@ module ReadTS.Convert where
 import Prelude
 
 import Control.Alt ((<|>))
-import Data.Array (filter)
+import Data.Array (filter, mapMaybe, null)
 import Data.Either (fromRight)
 import Data.Foldable (any)
 import Data.Maybe (Maybe(..), fromMaybe')
@@ -12,8 +12,8 @@ import Data.String as String
 import Data.String.Regex (Regex, parseFlags, regex, replace')
 import Data.Tuple (Tuple(..))
 import Partial.Unsafe (unsafePartial)
-import ReadTS (PSDeclaration(..), PSName(..), PSTypeDecl(..), TSType(..), dataTypeRef, functionSymbol, visitTypes)
-import ReadTS.CommonPS (arrayType, booleanType, effectFnType, funcType, numberType, stringType, unitType, unsafeCoerceFunc)
+import ReadTS (PSDeclaration(..), PSName(..), PSTypeDecl(..), TSType(..), NamedTSType, dataTypeRef, functionSymbol, visitTypes)
+import ReadTS.CommonPS (arrayType, booleanType, effectFnType, funcType, numberType, recordType, stringType, unitType, unsafeCoerceFunc)
 import ReadTS.WritePS (escapeString)
 
 isBooleanType :: TSType -> Boolean
@@ -45,6 +45,7 @@ simpleMapping = case _ of
   TSNumber -> Just numberType
   TSBoolean -> Just booleanType
   StringLiteral a -> Just $ stringConstType a
+  Any -> Just anyType
   _ -> Nothing 
 
 simplified :: TSType -> TSType
@@ -95,7 +96,7 @@ standardMappings :: (TSType -> PSTypeDecl) -> TSType -> PSTypeDecl
 standardMappings f t =
   let m = unionMapping f t <|>
   simpleMapping t <|> arrayMapping f t <|>
-  functionMapping f t
+  functionMapping f t <|> objectMapping f t
   in fromMaybe' (\_ -> TCommented (show t) anyType) m
 
 referenceMapping :: (String -> Array TSType -> Maybe PSTypeDecl) -> TSType -> Maybe PSTypeDecl
@@ -138,3 +139,18 @@ mkEnumFunction a = let name = escapeFunc a in DFunction {name, ftype: stringCons
 
 startsWithAny :: Array String -> String -> Boolean
 startsWithAny patterns s = any (\p -> (indexOf (Pattern p) s) == Just 0) patterns
+
+membersWhich :: (TSType -> PSTypeDecl) -> Boolean -> Array NamedTSType -> Array (Tuple String PSTypeDecl)
+membersWhich f b = mapMaybe member 
+  where 
+  member {optional} | optional /= b = Nothing
+  member {name,t} = Just $ Tuple name $ f t
+
+objectMapping :: (TSType -> PSTypeDecl) -> TSType -> Maybe PSTypeDecl
+objectMapping f = case _ of 
+  AnonymousObject members -> 
+    let optional = membersWhich f true members
+        mand = membersWhich f false members
+    in Just $ if null optional then recordType mand Nothing 
+           else optionRecordType (TRow (optional <> mand) Nothing) (TRow mand Nothing)
+  _ -> Nothing
