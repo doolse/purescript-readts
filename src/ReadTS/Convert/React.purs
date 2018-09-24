@@ -91,7 +91,7 @@ createLeafFuncName :: PSName
 createLeafFuncName = reactName "unsafeCreateLeafElement"
 
 createElemFuncName :: PSName
-createElemFuncName = reactName "unsafeCreateElementDynamic"
+createElemFuncName = reactName "unsafeCreateElement"
 
 convertProperty :: (TSType -> PSTypeDecl) -> NamedTSType -> Property
 convertProperty f {name,t,optional} = 
