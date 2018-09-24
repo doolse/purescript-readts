@@ -12,7 +12,7 @@ import Data.String as String
 import Data.String.Regex (Regex, parseFlags, regex, replace')
 import Data.Tuple (Tuple(..))
 import Partial.Unsafe (unsafePartial)
-import ReadTS (PSDeclaration(..), PSName(..), PSTypeDecl(..), TSType(..), NamedTSType, dataTypeRef, functionSymbol, visitTypes)
+import ReadTS (NamedTSType, PSDeclaration(..), PSName(..), PSTypeDecl(..), TSType(..), dataTypeRef, functionSymbol, visitTypes)
 import ReadTS.CommonPS (arrayType, booleanType, effectFnType, funcType, numberType, recordType, stringType, unitType, unsafeCoerceFunc)
 import ReadTS.WritePS (escapeString)
 
@@ -48,11 +48,17 @@ simpleMapping = case _ of
   Any -> Just anyType
   _ -> Nothing 
 
+simplifyNamed :: NamedTSType -> NamedTSType
+simplifyNamed {name,optional,t} = {name,optional, t: simplified t}
+
 simplified :: TSType -> TSType
 simplified = case _ of 
-  Union _ [o] -> o
+  Union _ [o] -> simplified o
   Union a types | any isFalseTSType types && any isTrueTSType types -> 
-    simplified (Union a $ [TSBoolean] <>  filter (not <<< isBooleanType) types)
+    simplified (Union a $ [TSBoolean] <> filter (not <<< isBooleanType) types)
+  Union a members -> Union a $ map simplified members
+  Function f -> Function {params: map simplifyNamed f.params, return: simplified f.return}
+  AnonymousObject members -> AnonymousObject $ map simplifyNamed members
   t -> t
 
 isUnionable :: TSType -> Boolean 

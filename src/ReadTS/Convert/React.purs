@@ -57,6 +57,7 @@ reactRefMapping "React.TransitionEvent" [_] = Just $ reactEventType "SyntheticTr
 reactRefMapping "React.CompositionEvent" [_] = Just $ reactEventType "SyntheticCompositionEvent"
 reactRefMapping "React.FormEvent" [_] = Just $ reactEventType "SyntheticEvent"
 reactRefMapping "React.DragEvent" [_] = Just $ reactEventType "SyntheticEvent"
+reactRefMapping "React.ChangeEvent" [_] = Just $ reactEventType "SyntheticEvent"
 reactRefMapping _ _ = Nothing
 
 reactComponentMapper :: (String -> Array TSType -> Maybe PSTypeDecl) -> TSType -> PSTypeDecl
@@ -91,7 +92,7 @@ createLeafFuncName :: PSName
 createLeafFuncName = reactName "unsafeCreateLeafElement"
 
 createElemFuncName :: PSName
-createElemFuncName = reactName "unsafeCreateElement"
+createElemFuncName = reactCompat "unsafeCreateElement"
 
 convertProperty :: (TSType -> PSTypeDecl) -> NamedTSType -> Property
 convertProperty f {name,t,optional} = 
@@ -120,11 +121,11 @@ propertiesToModule {moduleName,classRequire,classProperty} componentName props c
     baseFuncName = escapeFunc componentName
     classFuncName = escapeFunc $ "class" <> componentName
     classFunc = DForeignFunction classFuncName $ TVariables ["a"] $ reactClassType (TVariable "a")
-    childrenOnlyFunc name = DFunction {name, ftype: funcType reactArray reactElementType, 
+    childrenOnlyFunc childType name = DFunction {name, ftype: funcType childType reactElementType, 
         bodySyms: [functionSymbol createElemFuncName],
         body: \qual -> name <> " = " <> qual createElemFuncName <> " " <> classFuncName <> " {}"} 
     declarations = case componentType of
-      ChildrenOnly childType -> [ classFunc, childrenOnlyFunc baseFuncName ]
+      ChildrenOnly childType -> [ classFunc, childrenOnlyFunc childType baseFuncName ]
       _ -> let 
           {yes:opts, no:mand} = partition _.optional props 
           toRowMember {name,t} = Tuple name t
@@ -140,12 +141,13 @@ propertiesToModule {moduleName,classRequire,classProperty} componentName props c
           elemFunc funcCall retType name = constrainedFuncType retType [functionSymbol funcCall] 
             (\qual -> name <> " = " <> qual funcCall <> " " <> classFuncName) name
           leafFunc = elemFunc createLeafFuncName reactElementType 
-          bothFunc = elemFunc createElemFuncName (funcType reactArray reactElementType)
+          bothFunc childType = elemFunc createElemFuncName (funcType childType reactElementType)
           funcs = case componentType of 
             PropsOnly -> [leafFunc baseFuncName]
-            _ -> [bothFunc baseFuncName, 
-                  childrenOnlyFunc $ baseFuncName <> "_", 
+            PropsAndChildren childType _ -> [bothFunc childType baseFuncName, 
+                  childrenOnlyFunc childType $ baseFuncName <> "_", 
                   leafFunc $ baseFuncName <> "'"]
+            _ -> []
         in [classFunc, optionalType, mandType] <> funcs
   in { 
     name: componentName,  
