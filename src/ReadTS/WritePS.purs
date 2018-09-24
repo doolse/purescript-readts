@@ -19,8 +19,9 @@ import ReadTS (PSDeclaration(..), PSModule(..), PSName(..), PSSymbol(..), PSSymb
 
 data Token = Term String 
   | Infix Int String Boolean Token Token 
-  | Commented String Token 
+  | Commented String Token
   | Tokens (Array Token) 
+  | IncreaseIndent Token
   | Indented Token
 
 writeSpaces :: Int -> String
@@ -42,9 +43,10 @@ showTokenIndent ind = let
     Term t -> t
     Infix level op true l r -> showToken l <> op <> bracketed level r
     Infix level op false l r -> bracketed level l <> op <> showToken r
-    Commented com t -> showToken t <> "{-- " <> com <> "--}"
+    Commented com t -> showToken t <> " {-- " <> com <> "--}"
     Tokens tokens -> foldMap showToken tokens
-    Indented t -> showTokenIndent (ind + 2) t
+    IncreaseIndent t -> showTokenIndent (ind + 2) t
+    Indented t -> "\n" <> writeSpaces ind <> showToken t
   in showToken
 
 instance showTokenInst :: Show Token where 
@@ -86,7 +88,7 @@ writeModule (PSModule mod) =
     writeImport _ = Nothing 
 
     writeMember :: Tuple String PSTypeDecl -> Token 
-    writeMember (Tuple member t) = Tokens [Term $ escapedMember member, Term " :: ", writeType t]
+    writeMember (Tuple member t) = Tokens [Indented $ Term $ escapedMember member, Term " :: ", writeType t]
 
     infixed :: Int -> String -> Boolean -> Token -> List Token -> Token
     infixed level op left first = let 
@@ -104,13 +106,17 @@ writeModule (PSModule mod) =
     writeType = case _ of 
         TTypeRef (PSName "Prim" "Function") [a, b] -> Infix 2 " -> " false (writeType a) (writeType b)
         TTypeRef typeName args -> infixed 1 " " true (Term $ qual typeName) $ List.reverse $ map writeType $ List.fromFoldable args
-        TConstraint typeName args next -> Infix 5 "  => " true (writeType $ TTypeRef typeName args) $ writeType next
+        TConstraint typeName args next -> Infix 5 " => " true (writeType $ TTypeRef typeName args) $ writeType next
         TVariable v -> Term v
         TStringConstant sc -> Term (escapeString sc)
-        TVariables vars t -> Tokens [Term $ "forall " <> (joinWith " " vars) <> ".", writeType t]
+        TVariables vars t -> Tokens [Term $ "forall " <> (joinWith " " vars) <> ". ", writeType t]
         TRow members ext -> 
-          let extender = maybe ([]) (\et ->  [Term " | ", writeType et]) ext
-          in Tokens $ [Term "(", maybeInfix 3 ",\n  " true $ List.fromFoldable $ writeMember <$> members] <> extender <> [Term ")"]
+          let extender = maybe [] (\et ->  [Term " | ", writeType et]) ext
+          in Tokens [
+           Term "(",
+           IncreaseIndent $ maybeInfix 3 ", " true $ List.fromFoldable $ writeMember <$> members,
+           Indented $ Tokens $ extender <> [Term ")"]
+          ]
         TCommented com t -> Commented com (writeType t)
     writeDeclaration = case _ of 
       DForeignFunction name typ -> "foreign import " <> name <> " :: " <> (show $ writeType typ)
