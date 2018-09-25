@@ -1,16 +1,6 @@
 "use strict";
-var __assign = (this && this.__assign) || function () {
-    __assign = Object.assign || function(t) {
-        for (var s, i = 1, n = arguments.length; i < n; i++) {
-            s = arguments[i];
-            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
-                t[p] = s[p];
-        }
-        return t;
-    };
-    return __assign.apply(this, arguments);
-};
 Object.defineProperty(exports, "__esModule", { value: true });
+var tslib_1 = require("tslib");
 var ts = require("typescript");
 function readTypes(configFilename, include) {
     var configJson = ts.parseConfigFileTextToJson(configFilename, ts.sys.readFile(configFilename)).config;
@@ -54,14 +44,17 @@ function readTypes(configFilename, include) {
         if (t.aliasSymbol) {
             alias = {
                 "alias": {
-                    "typeReference": checker.getFullyQualifiedName(t.aliasSymbol),
+                    "typeReference": getFullyQualifiedName(t.aliasSymbol),
                     "typeParams": t.aliasTypeArguments ? t.aliasTypeArguments.map(getTSType) : []
                 }
             };
         }
         else
             alias = {};
-        return __assign({}, alias, getTSType(t));
+        return tslib_1.__assign({}, alias, getTSType(t));
+    }
+    function getFullyQualifiedName(s) {
+        return checker.getFullyQualifiedName(s);
     }
     function getTSType(memType) {
         if (memType.isUnionOrIntersection()) {
@@ -90,7 +83,7 @@ function readTypes(configFilename, include) {
             if (objFlags & ts.ObjectFlags.Reference) {
                 var tr = memType;
                 return {
-                    type: "typeReference", name: checker.getFullyQualifiedName(memType.symbol),
+                    type: "typeReference", name: getFullyQualifiedName(memType.symbol),
                     typeParams: tr.typeArguments ? tr.typeArguments.map(getWithAliasProps) : [],
                     flags: memType.flags,
                     objFlags: objFlags
@@ -104,7 +97,7 @@ function readTypes(configFilename, include) {
                     };
                 }
                 if (objFlags & ts.ObjectFlags.Interface) {
-                    return { type: "interfaceReference", name: checker.getFullyQualifiedName(memType.symbol) };
+                    return { type: "interfaceReference", name: getFullyQualifiedName(memType.symbol) };
                 }
                 return { type: "unknownObject", flags: objFlags };
             }

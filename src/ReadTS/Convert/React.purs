@@ -41,6 +41,11 @@ reactCompat = PSName "Data.TSCompat.React"
 reactNodeType :: PSTypeDecl
 reactNodeType = dataTypeRef (reactCompat "ReactNode") []
 
+noEqivalentEvent :: Set.Set String
+noEqivalentEvent = Set.fromFoldable [ 
+  "React.FormEvent", "React.DragEvent", "React.ChangeEvent", "React.PointerEvent"
+]
+
 reactRefMapping :: String -> Array TSType -> Maybe PSTypeDecl
 reactRefMapping "React.ReactElement" [Any] = Just $ reactType "ReactElement"
 reactRefMapping "React.ReactNode" [] = Just reactNodeType
@@ -55,9 +60,7 @@ reactRefMapping "React.TouchEvent" [_] = Just $ reactEventType "SyntheticTouchEv
 reactRefMapping "React.WheelEvent" [_] = Just $ reactEventType "SyntheticWheelEvent"
 reactRefMapping "React.TransitionEvent" [_] = Just $ reactEventType "SyntheticTransitionEvent"
 reactRefMapping "React.CompositionEvent" [_] = Just $ reactEventType "SyntheticCompositionEvent"
-reactRefMapping "React.FormEvent" [_] = Just $ reactEventType "SyntheticEvent"
-reactRefMapping "React.DragEvent" [_] = Just $ reactEventType "SyntheticEvent"
-reactRefMapping "React.ChangeEvent" [_] = Just $ reactEventType "SyntheticEvent"
+reactRefMapping ev [_] | Set.member ev noEqivalentEvent = Just $ reactEventType "SyntheticEvent"
 reactRefMapping _ _ = Nothing
 
 reactComponentMapper :: (String -> Array TSType -> Maybe PSTypeDecl) -> TSType -> PSTypeDecl

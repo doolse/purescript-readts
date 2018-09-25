@@ -68,12 +68,16 @@ export function readTypes(
     {
       alias = {
         "alias": {
-          "typeReference": checker.getFullyQualifiedName(t.aliasSymbol),
+          "typeReference": getFullyQualifiedName(t.aliasSymbol),
           "typeParams": t.aliasTypeArguments ? t.aliasTypeArguments.map(getTSType):[] 
         }
       }
     } else alias = {}
     return {...alias, ...getTSType(t)}
+  }
+
+  function getFullyQualifiedName(s: ts.Symbol): string {
+    return checker.getFullyQualifiedName(s);
   }
 
   function getTSType(memType: ts.Type): any {
@@ -108,7 +112,7 @@ export function readTypes(
       {
         let tr = (<ts.TypeReference> memType);
         return {
-          type: "typeReference", name: checker.getFullyQualifiedName(memType.symbol), 
+          type: "typeReference", name: getFullyQualifiedName(memType.symbol), 
           typeParams: tr.typeArguments ? tr.typeArguments.map(getWithAliasProps):[], 
           flags: memType.flags, 
           objFlags
@@ -124,7 +128,7 @@ export function readTypes(
         }
         if (objFlags & ts.ObjectFlags.Interface)
         {
-          return {type: "interfaceReference", name: checker.getFullyQualifiedName(memType.symbol)}
+          return {type: "interfaceReference", name: getFullyQualifiedName(memType.symbol)}
         }
         return {type: "unknownObject", flags:objFlags}
       }

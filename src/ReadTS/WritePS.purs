@@ -2,7 +2,7 @@ module ReadTS.WritePS where
 
 import Prelude
 
-import Data.Array (foldMap, mapMaybe, uncons)
+import Data.Array (foldMap, mapMaybe)
 import Data.Either (fromRight)
 import Data.Foldable (maximum)
 import Data.List (List(..))
@@ -98,8 +98,8 @@ writeModule (PSModule mod) =
       in rec
 
     maybeInfix :: Int -> String -> Boolean -> List Token -> Token 
-    maybeInfix level op left tokens = case List.reverse tokens of 
-      Cons h t -> infixed level op left h t 
+    maybeInfix level op left tokens = case tokens of 
+      Cons h t -> infixed level op left h $ List.reverse t 
       Nil -> Term ""
 
     writeType :: PSTypeDecl -> Token
