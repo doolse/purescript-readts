@@ -2,7 +2,8 @@ module ReadTS.Convert.React where
 
 import Prelude
 
-import Data.Array (filter, find, foldMap, null, partition)
+import Control.MonadZero (guard)
+import Data.Array (filter, find, foldMap, null)
 import Data.Array as Array
 import Data.List (List(..))
 import Data.List as List
@@ -21,7 +22,9 @@ import ReadTS.CommonPS (arrayType, funcType, recordRefType)
 import ReadTS.Convert (collectStrings, escapeFunc, isTSEQSymbol, mkEnumFunction, optionRecordType, optionalType, referenceMapping, simplified, standardMappings)
 import ReadTS.WritePS (writeModule)
 
-type Property = { name:: String, optional::Boolean, t:: PSTypeDecl, stringEnums :: Set.Set String }
+data PropertyType = Optional | Mandatory | Extended
+derive instance eqPT :: Eq PropertyType 
+type Property = { name:: String, propType::PropertyType, t:: PSTypeDecl, stringEnums :: Set.Set String }
 
 type ComponentModule = {
   name :: String, 
@@ -34,6 +37,9 @@ type ComponentModule = {
 }
 
 data ComponentType = PropsAndChildren PSTypeDecl Boolean | PropsOnly | ChildrenOnly PSTypeDecl
+
+propTypeIs :: PropertyType -> Property -> Boolean 
+propTypeIs pt = _.propType >>> eq pt
 
 reactCompat :: String -> PSName
 reactCompat = PSName "Data.TSCompat.React"
@@ -101,7 +107,10 @@ convertProperty :: (TSType -> PSTypeDecl) -> NamedTSType -> Property
 convertProperty f {name,t,optional} = 
   let optType = fst $ optionalType t 
       stringEnums = Set.fromFoldable $ collectStrings t 
-  in {name, optional, t: f $ simplified optType, stringEnums}
+  in {name, 
+      propType: if optional then Optional else Mandatory, 
+      t: f $ simplified optType, stringEnums
+  }
 
 reactArray :: PSTypeDecl
 reactArray = arrayType reactElementType
@@ -114,7 +123,7 @@ detectComponentType props | Just children <- find isChildrenProp props  =
         t -> reactArray
       withoutChildren = filter (not isChildrenProp) props 
   in if null withoutChildren then {componentType: ChildrenOnly childType, props:[] } 
-     else  {componentType: PropsAndChildren childType children.optional, props: withoutChildren}
+     else  {componentType: PropsAndChildren childType (propTypeIs Mandatory children), props: withoutChildren}
 detectComponentType props = {componentType: PropsAndChildren reactArray true, props}
 
 propertiesToModule :: {moduleName :: String, classRequire :: String, classProperty :: String } 
@@ -130,28 +139,39 @@ propertiesToModule {moduleName,classRequire,classProperty} componentName props c
     declarations = case componentType of
       ChildrenOnly childType -> [ classFunc, childrenOnlyFunc childType baseFuncName ]
       _ -> let 
-          {yes:opts, no:mand} = partition _.optional props 
           toRowMember {name,t} = Tuple name t
           optionalName = componentName <> "PropsO"
+          extName = componentName <> "PropsE"
           mandName = componentName <> "PropsM"
-          optionalType = DTypeAlias optionalName ["r"] (TRow (toRowMember <$> opts) $ Just (TVariable "r"))
-          mandType = DTypeAlias mandName [] (TRow (toRowMember <$> mand) $ Nothing)
+          optType optName propType = DTypeAlias optName ["r"] (TRow (toRowMember <$> filter (propTypeIs propType) props) $ Just (TVariable "r"))
+          optionalType = optType optionalName Optional
+          extType = optType extName Extended
+          hasExtended = case extType of 
+            DTypeAlias _ _ (TRow [] _) -> false 
+            _ -> true
+          mandType = DTypeAlias mandName [] (TRow (toRowMember <$> filter (propTypeIs Mandatory) props) $ Nothing)
           mandRef = localType mandName
-          propRecord = optionRecordType (localType' optionalName $ [mandRef]) mandRef
-          constrainedFuncType retType bodySyms body name = DFunction {name, bodySyms, 
-            ftype:TVariables ["a"] (TConstraint isTSEQSymbol [recordRefType $ TVariable "a", propRecord ] $ 
+          extRef = localType' extName [mandRef]
+
+          propRecord optExt = optionRecordType (localType' optionalName $ [optExt]) mandRef
+
+          constrainedFuncType optExt retType bodySyms body name = DFunction {name, bodySyms, 
+            ftype:TVariables ["a"] (TConstraint isTSEQSymbol [recordRefType $ TVariable "a", propRecord optExt] $ 
               funcType (recordRefType $ TVariable "a") retType), body }
-          elemFunc funcCall retType name = constrainedFuncType retType [functionSymbol funcCall] 
+
+          elemFunc optExt funcCall retType name = constrainedFuncType optExt retType [functionSymbol funcCall] 
             (\qual -> name <> " = " <> qual funcCall <> " " <> classFuncName) name
-          leafFunc = elemFunc createLeafFuncName reactElementType 
-          bothFunc childType = elemFunc createElemFuncName (funcType childType reactElementType)
+          leafFunc optExt = elemFunc optExt createLeafFuncName reactElementType 
+          bothFunc optExt childType = elemFunc optExt createElemFuncName (funcType childType reactElementType)
           funcs = case componentType of 
-            PropsOnly -> [leafFunc baseFuncName]
-            PropsAndChildren childType _ -> [bothFunc childType baseFuncName, 
+            PropsOnly -> [leafFunc mandRef baseFuncName] <> (guard hasExtended $> (leafFunc extRef $ baseFuncName <> "''"))
+            PropsAndChildren childType _ -> [
+                  bothFunc mandRef childType baseFuncName, 
                   childrenOnlyFunc childType $ baseFuncName <> "_", 
-                  leafFunc $ baseFuncName <> "'"]
+                  leafFunc mandRef $ baseFuncName <> "'"] <> 
+                  (guard hasExtended $> (bothFunc extRef childType $ baseFuncName <> "''"))
             _ -> []
-        in [classFunc, optionalType, mandType] <> funcs
+        in [classFunc, optionalType, mandType] <> (guard hasExtended $> extType) <> funcs
   in { 
     name: componentName,  
     "module": PSModule { name: moduleName, declarations }, 

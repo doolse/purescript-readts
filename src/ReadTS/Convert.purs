@@ -7,7 +7,8 @@ import Data.Array (filter, mapMaybe, null)
 import Data.Either (fromRight)
 import Data.Foldable (any)
 import Data.Maybe (Maybe(..), fromMaybe')
-import Data.String (Pattern(..), indexOf, toLower, toUpper)
+import Data.Set as Set
+import Data.String (Pattern(..), Replacement(..), indexOf, replaceAll, toLower, toUpper)
 import Data.String as String
 import Data.String.Regex (Regex, parseFlags, regex, replace')
 import Data.Tuple (Tuple(..))
@@ -130,8 +131,20 @@ collectStrings = visitTypes $ case _ of
 camelHyphen :: Regex
 camelHyphen = unsafePartial fromRight $ regex "-([a-z])" $ parseFlags "ig"
 
+reservedIdentifiers :: Set.Set String 
+reservedIdentifiers = Set.fromFoldable [
+  "false", 
+  "true",
+  "do",
+  "import", 
+  "data"
+]
+
 escapeFunc :: String -> String 
-escapeFunc l = lowerFirst $ unsafePartial $ replace' camelHyphen (\_ [a] -> toUpper a) l
+escapeFunc l = let cameled = unsafePartial $ replace' camelHyphen (\_ [a] -> toUpper a) l
+  in case lowerFirst $ replaceAll (Pattern " ") (Replacement "_") $ cameled of 
+    funcName | Set.member funcName reservedIdentifiers -> funcName <> "_"
+    fn -> fn
 
 upperFirst :: String -> String
 upperFirst name = toUpper (String.take 1 name) <> String.drop 1 name
