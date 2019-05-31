@@ -2,7 +2,7 @@ module ReadTS where
 import Prelude
 
 import Data.Argonaut.Core (Json)
-import Data.Argonaut.Decode (decodeJson, (.?), (.??))
+import Data.Argonaut.Decode (decodeJson, (.:), (.:?))
 import Data.Array (foldMap)
 import Data.Either (Either(..), either)
 import Data.Maybe (Maybe, maybe)
@@ -106,15 +106,15 @@ symbolsForDeclaration = case _ of
 
 decodeAlias :: Object Json -> Either String TypeRefParams
 decodeAlias o = do 
-   name <- o .? "typeReference"
-   typeArgs <- o .? "typeParams" >>= traverse decodeTSType
+   name <- o .: "typeReference"
+   typeArgs <- o .: "typeParams" >>= traverse decodeTSType
    pure {name, typeArgs}
 
 decodeTSType :: Json -> Either String TSType
 decodeTSType v = do
   o <- decodeJson v
-  let decodeMembers = o .? "members" >>= traverse decodeMember  
-  o .? "type" >>= case _ of 
+  let decodeMembers = o .: "members" >>= traverse decodeMember  
+  o .: "type" >>= case _ of 
     "any" -> pure Any
     "boolean" -> pure TSBoolean
     "string" -> pure TSString
@@ -125,32 +125,32 @@ decodeTSType v = do
     "void" -> pure Void 
     "undefined" -> pure Undefined
     "union" -> do 
-      alias <- o .?? "alias" >>= traverse decodeAlias
-      Union alias <$> (o .? "types" >>= traverse decodeTSType)
-    "stringLiteral" -> StringLiteral <$> o .? "value"
-    "numberLiteral" -> NumberLiteral <$> o .? "value"
+      alias <- o .:? "alias" >>= traverse decodeAlias
+      Union alias <$> (o .: "types" >>= traverse decodeTSType)
+    "stringLiteral" -> StringLiteral <$> o .: "value"
+    "numberLiteral" -> NumberLiteral <$> o .: "value"
     "unknownObject" -> pure Unknown
-    "typeparam" -> TypeParam <$> o .? "name" 
-    "interfaceReference" -> InterfaceReference <$> o .? "name"
+    "typeparam" -> TypeParam <$> o .: "name" 
+    "interfaceReference" -> InterfaceReference <$> o .: "name"
     "object" -> AnonymousObject <$> decodeMembers
     "function" -> do 
-      params <- o .? "params" >>= traverse decodeMember
-      return <- o .? "return" >>= decodeTSType
+      params <- o .: "params" >>= traverse decodeMember
+      return <- o .: "return" >>= decodeTSType
       pure $ Function {params, return}
     "interface" -> do 
-      name <- o .? "name"
+      name <- o .: "name"
       members <- decodeMembers
       pure $ Interface {name,members}
     "typeReference" -> do 
-      name <- o .? "name"
-      typeArgs <- o .? "typeParams" >>= traverse decodeTSType
+      name <- o .: "name"
+      typeArgs <- o .: "typeParams" >>= traverse decodeTSType
       pure $ TypeReference {name,typeArgs}
     t -> Left $ "Unknown type" <> show t
   where
   decodeMember o = do 
-    name <- o .? "name"
-    optional <- o .? "optional"
-    t <- o .? "type" >>= decodeTSType
+    name <- o .: "name"
+    optional <- o .: "optional"
+    t <- o .: "type" >>= decodeTSType
     pure $ {name, t, optional}
 
 showNamed :: NamedTSType -> String 
