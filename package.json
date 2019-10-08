@@ -6,8 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Jolse Maginnis",
+  "license": "MIT",
   "dependencies": {
     "@types/node": "^10.9.4",
     "tslib": "^1.9.3",
